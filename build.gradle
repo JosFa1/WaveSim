@@ -1,0 +1,64 @@
+plugins {
+    id 'application'
+}
+
+group = 'wavesim'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+def lwjglVersion = '3.3.3'
+def lwjglNatives = 'natives-linux'
+
+dependencies {
+    implementation "org.lwjgl:lwjgl:${lwjglVersion}"
+    implementation "org.lwjgl:lwjgl-glfw:${lwjglVersion}"
+    implementation "org.lwjgl:lwjgl-vulkan:${lwjglVersion}"
+
+    runtimeOnly "org.lwjgl:lwjgl:${lwjglVersion}:${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-glfw:${lwjglVersion}:${lwjglNatives}"
+}
+
+application {
+    mainClass = 'wavesim.WaveSim'
+}
+
+def generatedShaders = layout.buildDirectory.dir('generated/resources/shaders')
+
+tasks.register('compileShaders') {
+    inputs.files(fileTree('shaders') {
+        include 'text.vert'
+        include 'text.frag'
+    })
+    outputs.dir(generatedShaders)
+
+    doLast {
+        def outputDirectory = generatedShaders.get().asFile
+        outputDirectory.mkdirs()
+        def glslc = providers.environmentVariable('GLSLC').orElse('glslc').get()
+
+        fileTree('shaders').matching {
+            include 'text.vert'
+            include 'text.frag'
+        }.files.each { source ->
+            def process = new ProcessBuilder(
+                    glslc,
+                    source.absolutePath,
+                    '-o',
+                    new File(outputDirectory, source.name + '.spv').absolutePath
+            ).inheritIO().start()
+            if (process.waitFor() != 0) {
+                throw new GradleException("Shader compilation failed for ${source.name}")
+            }
+        }
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn tasks.named('compileShaders')
+    from(generatedShaders) {
+        into 'shaders'
+    }
+}

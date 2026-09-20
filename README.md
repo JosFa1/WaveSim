@@ -1,45 +1,48 @@
-# WaveSim skeleton
+# WaveSim
 
-A deliberately bare C++/Vulkan starting point. It opens a resizable, empty window, clears it with Vulkan every frame, and updates the window title with the current FPS.
+WaveSim is a deliberately small Java Vulkan learning project. It opens a
+resizable GLFW window, clears it with Vulkan, and draws a text FPS counter in
+the upper-left corner. The window title stays `WaveSim`; the FPS is not put in
+the title bar.
+
+There is no wave simulation, geometry, or extra UI yet. The next drawing
+experiment belongs in `recordCommandBuffer()` in
+`src/main/java/wavesim/WaveSim.java`.
+
+## Requirements
+
+- Java 17 or newer
+- Gradle 9 or newer
+- A Vulkan loader and working Vulkan driver
+- `glslc` on `PATH` for compiling the two small shaders
+
+On CachyOS/Arch, the system dependencies are usually available with:
+
+```bash
+sudo pacman -S --needed jdk-openjdk gradle glfw vulkan-headers vulkan-loader shaderc
+```
+
+LWJGL, GLFW bindings, and Vulkan bindings are downloaded from Maven Central by
+Gradle. Linux native bindings are selected in `build.gradle`.
 
 ## Build and run
 
-On CachyOS/Arch, install the development packages if they are missing:
-
 ```bash
-sudo pacman -S --needed cmake ninja glfw vulkan-headers
+gradle build
+gradle run
 ```
 
-Then build it:
+The build compiles `shaders/text.vert` and `shaders/text.frag` into SPIR-V and
+places them on the Java runtime classpath. The text overlay is rasterized by
+Java's built-in AWT font renderer, uploaded to a Vulkan image, and rendered as
+a blended textured quad. The texture is refreshed twice per second with the
+current FPS.
 
-```bash
-cmake -S . -B build -G Ninja
-cmake --build build
-./build/wave_sim
-```
+## Project layout
 
-## Windows
-
-This project uses GLFW and Vulkan only, so the same source builds on Windows.
-
-1. Install Visual Studio 2022 with **Desktop development with C++**, plus CMake and Ninja.
-2. Install [vcpkg](https://github.com/microsoft/vcpkg) and set the `VCPKG_ROOT` environment variable to its folder.
-3. Install the dependencies and build from PowerShell:
-
-```powershell
-vcpkg install
-cmake -S . -B build/windows -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
-cmake --build build/windows
-.\build\windows\wave_sim.exe
-```
-
-The window is intentionally empty. Its title changes twice per second with the current FPS; this leaves the entire Vulkan render surface available for your first drawing experiment.
-
-The compiled shader location is passed to the program at build time, so it also works when launched from an IDE with a different working directory.
-
-## Where to start learning
-
-- [src/main.cpp](src/main.cpp) contains the entire skeleton.
-- `createSwapchain()` and `recreateSwapchain()` are the resizable-window pieces.
-- `recordCommandBuffer()` is the place where you will eventually add drawing commands.
-- `updateFps()` is intentionally separate and uses only GLFW's title bar, so there is no font or UI system yet.
+- `src/main/java/wavesim/WaveSim.java` contains the Vulkan instance, device,
+  swapchain, synchronization, text texture, and render loop.
+- `shaders/text.vert` and `shaders/text.frag` are the only shaders needed for
+  the FPS overlay.
+- `recordCommandBuffer()` is the intended place to add future pipelines and
+  draw calls.
