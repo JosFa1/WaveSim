@@ -1,5 +1,12 @@
-// A minimal Vulkan + GLFW starting point. Add your own rendering in
-// recordCommandBuffer() when you are ready.
+// WaveSim is currently a small Vulkan + GLFW learning project.
+//
+// The program opens a window, clears it with Vulkan, and shows the current
+// frames per second (FPS) in the title bar.  There is no actual wave
+// simulation yet.  The best place to add drawing code later is
+// recordCommandBuffer().
+
+// This tells GLFW to include the Vulkan definitions it needs for creating a
+// window surface.  It must be defined before including GLFW's header.
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -16,29 +23,68 @@
 #include <vector>
 
 namespace {
+
+// We can keep this many frames in progress at the same time.  Two frames is
+// a common starting point because it lets the CPU prepare one frame while
+// the GPU is finishing the previous frame.
 constexpr uint32_t kFramesInFlight = 2;
-[[noreturn]] void fail(const std::string& message) { throw std::runtime_error(message); }
-void check(VkResult result, const char* action) {
-    if (result != VK_SUCCESS) fail(std::string(action) + " failed: " + std::to_string(result));
+
+constexpr int kWindowWidth = 1100;
+constexpr int kWindowHeight = 650;
+
+// Throwing an exception gives main() one place to print Vulkan/GLFW errors.
+[[noreturn]] void fail(const std::string& message) {
+    throw std::runtime_error(message);
 }
 
+// Most Vulkan functions return a VkResult instead of throwing an exception.
+// This small helper converts an unsuccessful result into the same error path
+// used by the rest of the program.
+void check(VkResult result, const char* action) {
+    if (result != VK_SUCCESS) {
+        fail(std::string(action) + " failed: " + std::to_string(result));
+    }
+}
+
+// A physical device can use different queue families for drawing and for
+// presenting an image to the window.  Keep both family numbers together.
 struct QueueFamilies {
-    std::optional<uint32_t> graphics;
-    std::optional<uint32_t> present;
-    bool complete() const { return graphics && present; }
+    std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
+
+    bool complete() const {
+        return graphicsFamily.has_value() && presentFamily.has_value();
+    }
 };
 
 class App {
 public:
-    void run() { createWindow(); createVulkan(); loop(); cleanup(); }
+    void run() {
+        createWindow();
+        createVulkan();
+        mainLoop();
+        cleanup();
+    }
 
 private:
+    // ----------------------------- Window ------------------------------
+
     GLFWwindow* window{};
+
+    // ------------------------- Vulkan objects --------------------------
+    // Vulkan objects are handles owned by the Vulkan driver.  They are
+    // created during startup and released in cleanup().
     VkInstance instance{};
     VkSurfaceKHR surface{};
     VkPhysicalDevice gpu{};
     VkDevice device{};
-    VkQueue graphicsQueue{}, presentQueue{};
+
+    VkQueue graphicsQueue{};
+    VkQueue presentQueue{};
+
+    // The swapchain is the group of images that Vulkan can show in the
+    // window.  Its dependent objects are recreated when the window changes
+    // size or becomes visible again after being minimized.
     VkSwapchainKHR swapchain{};
     VkFormat swapchainFormat{};
     VkExtent2D swapchainExtent{};
@@ -46,291 +92,783 @@ private:
     std::vector<VkImageView> imageViews;
     VkRenderPass renderPass{};
     std::vector<VkFramebuffer> framebuffers;
+
+    // Command buffers contain instructions for the GPU.  A command pool is
+    // the allocator used to create them.
     VkCommandPool commandPool{};
     std::array<VkCommandBuffer, kFramesInFlight> commandBuffers{};
-    std::array<VkSemaphore, kFramesInFlight> imageAvailable{}, renderFinished{};
+
+    // Semaphores coordinate the GPU stages.  Fences let the CPU wait until a
+    // frame has finished before reusing its command buffer.
+    std::array<VkSemaphore, kFramesInFlight> imageAvailable{};
+    std::array<VkSemaphore, kFramesInFlight> renderFinished{};
     std::array<VkFence, kFramesInFlight> inFlight{};
-    uint32_t frame{};
+
+    uint32_t currentFrame{};
     bool resized{};
+
+    // Values used by updateFps().
     uint32_t frameCount{};
     std::chrono::steady_clock::time_point fpsStart{};
 
+    // -------------------------- Window setup ---------------------------
+
     void createWindow() {
-        if (!glfwInit()) fail("Could not initialize GLFW");
+        if (!glfwInit()) {
+            fail("Could not initialize GLFW");
+        }
+
+        // Vulkan creates the graphics context, so GLFW must not create an
+        // OpenGL context for this window.
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-        window = glfwCreateWindow(1100, 650, "WaveSim | FPS: --", nullptr, nullptr);
-        if (!window) fail("Could not create the window");
+
+        window = glfwCreateWindow(
+            kWindowWidth,
+            kWindowHeight,
+            "WaveSim | FPS: --",
+            nullptr,
+            nullptr);
+
+        if (!window) {
+            fail("Could not create the window");
+        }
+
+        // GLFW callbacks do not know which App object they belong to.  Store
+        // this pointer so the resize callback can reach the App instance.
         glfwSetWindowUserPointer(window, this);
-        glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int, int) {
-            static_cast<App*>(glfwGetWindowUserPointer(w))->resized = true;
+        glfwSetFramebufferSizeCallback(window, [](GLFWwindow* resizedWindow, int, int) {
+            auto* app = static_cast<App*>(glfwGetWindowUserPointer(resizedWindow));
+            app->resized = true;
         });
+
         fpsStart = std::chrono::steady_clock::now();
     }
 
+    // -------------------------- Vulkan setup ---------------------------
+
     void createVulkan() {
         createInstance();
-        check(glfwCreateWindowSurface(instance, window, nullptr, &surface), "Creating window surface");
-        pickGpu(); createDevice(); createCommandPool(); createSwapchain(); createCommandBuffers(); createSyncObjects();
+
+        // A surface connects Vulkan to the native GLFW window.  It must be
+        // created after the Vulkan instance and before choosing a GPU.
+        check(
+            glfwCreateWindowSurface(instance, window, nullptr, &surface),
+            "Creating window surface");
+
+        pickGpu();
+        createDevice();
+        createCommandPool();
+        createSwapchain();
+        createCommandBuffers();
+        createSyncObjects();
     }
 
     void createInstance() {
-        VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-        app.pApplicationName = "WaveSim";
-        app.apiVersion = VK_API_VERSION_1_1;
+        VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+        appInfo.pApplicationName = "WaveSim";
+        appInfo.apiVersion = VK_API_VERSION_1_1;
+
+        // GLFW tells us which instance extensions are required by the
+        // current operating system and window system.
         uint32_t extensionCount{};
-        const char** extensions = glfwGetRequiredInstanceExtensions(&extensionCount);
-        VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-        info.pApplicationInfo = &app;
-        info.enabledExtensionCount = extensionCount;
-        info.ppEnabledExtensionNames = extensions;
-        check(vkCreateInstance(&info, nullptr, &instance), "Creating Vulkan instance");
+        const char** requiredExtensions =
+            glfwGetRequiredInstanceExtensions(&extensionCount);
+
+        VkInstanceCreateInfo createInfo{
+            VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+        createInfo.pApplicationInfo = &appInfo;
+        createInfo.enabledExtensionCount = extensionCount;
+        createInfo.ppEnabledExtensionNames = requiredExtensions;
+
+        check(
+            vkCreateInstance(&createInfo, nullptr, &instance),
+            "Creating Vulkan instance");
     }
 
-    QueueFamilies queuesFor(VkPhysicalDevice candidate) const {
+    QueueFamilies findQueueFamilies(VkPhysicalDevice candidate) const {
         QueueFamilies queues;
-        uint32_t count{};
-        vkGetPhysicalDeviceQueueFamilyProperties(candidate, &count, nullptr);
-        std::vector<VkQueueFamilyProperties> properties(count);
-        vkGetPhysicalDeviceQueueFamilyProperties(candidate, &count, properties.data());
-        for (uint32_t i = 0; i < count; ++i) {
-            if (properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) queues.graphics = i;
-            VkBool32 supportsPresent{};
-            vkGetPhysicalDeviceSurfaceSupportKHR(candidate, i, surface, &supportsPresent);
-            if (supportsPresent) queues.present = i;
+
+        uint32_t familyCount{};
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            candidate,
+            &familyCount,
+            nullptr);
+
+        std::vector<VkQueueFamilyProperties> families(familyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            candidate,
+            &familyCount,
+            families.data());
+
+        for (uint32_t familyIndex = 0; familyIndex < familyCount; ++familyIndex) {
+            const VkQueueFamilyProperties& family = families[familyIndex];
+
+            if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                queues.graphicsFamily = familyIndex;
+            }
+
+            VkBool32 canPresent{};
+            vkGetPhysicalDeviceSurfaceSupportKHR(
+                candidate,
+                familyIndex,
+                surface,
+                &canPresent);
+
+            if (canPresent) {
+                queues.presentFamily = familyIndex;
+            }
         }
+
         return queues;
     }
 
     bool supportsSwapchain(VkPhysicalDevice candidate) const {
-        uint32_t count{};
-        vkEnumerateDeviceExtensionProperties(candidate, nullptr, &count, nullptr);
-        std::vector<VkExtensionProperties> extensions(count);
-        vkEnumerateDeviceExtensionProperties(candidate, nullptr, &count, extensions.data());
-        for (const auto& extension : extensions)
-            if (std::string(extension.extensionName) == VK_KHR_SWAPCHAIN_EXTENSION_NAME) return true;
+        uint32_t extensionCount{};
+        vkEnumerateDeviceExtensionProperties(
+            candidate,
+            nullptr,
+            &extensionCount,
+            nullptr);
+
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        vkEnumerateDeviceExtensionProperties(
+            candidate,
+            nullptr,
+            &extensionCount,
+            extensions.data());
+
+        for (const VkExtensionProperties& extension : extensions) {
+            if (std::string(extension.extensionName) ==
+                VK_KHR_SWAPCHAIN_EXTENSION_NAME) {
+                return true;
+            }
+        }
+
         return false;
     }
 
     void pickGpu() {
-        uint32_t count{};
-        vkEnumeratePhysicalDevices(instance, &count, nullptr);
-        if (!count) fail("No Vulkan-capable GPU was found");
-        std::vector<VkPhysicalDevice> candidates(count);
-        vkEnumeratePhysicalDevices(instance, &count, candidates.data());
-        for (auto candidate : candidates) {
-            if (queuesFor(candidate).complete() && supportsSwapchain(candidate)) { gpu = candidate; return; }
+        uint32_t deviceCount{};
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+        if (deviceCount == 0) {
+            fail("No Vulkan-capable GPU was found");
         }
+
+        std::vector<VkPhysicalDevice> candidates(deviceCount);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, candidates.data());
+
+        for (VkPhysicalDevice candidate : candidates) {
+            const QueueFamilies queues = findQueueFamilies(candidate);
+
+            if (queues.complete() && supportsSwapchain(candidate)) {
+                gpu = candidate;
+                return;
+            }
+        }
+
         fail("No GPU can draw to this window");
     }
 
     void createDevice() {
-        const auto queues = queuesFor(gpu);
-        std::vector<uint32_t> families{*queues.graphics};
-        if (*queues.present != *queues.graphics) families.push_back(*queues.present);
-        const float priority = 1.0f;
-        std::vector<VkDeviceQueueCreateInfo> queueInfos;
-        for (uint32_t family : families) {
-            VkDeviceQueueCreateInfo queue{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-            queue.queueFamilyIndex = family; queue.queueCount = 1; queue.pQueuePriorities = &priority;
-            queueInfos.push_back(queue);
+        const QueueFamilies queues = findQueueFamilies(gpu);
+
+        // Usually the graphics and presentation queues are the same family,
+        // but Vulkan allows them to be different.  Create one queue for each
+        // distinct family that this application needs.
+        std::vector<uint32_t> uniqueFamilies{*queues.graphicsFamily};
+        if (*queues.presentFamily != *queues.graphicsFamily) {
+            uniqueFamilies.push_back(*queues.presentFamily);
         }
-        const char* extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-        VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-        info.queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size()); info.pQueueCreateInfos = queueInfos.data();
-        info.enabledExtensionCount = 1; info.ppEnabledExtensionNames = extensions;
-        check(vkCreateDevice(gpu, &info, nullptr, &device), "Creating logical device");
-        vkGetDeviceQueue(device, *queues.graphics, 0, &graphicsQueue);
-        vkGetDeviceQueue(device, *queues.present, 0, &presentQueue);
+
+        const float queuePriority = 1.0f;
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+
+        for (uint32_t familyIndex : uniqueFamilies) {
+            VkDeviceQueueCreateInfo queueCreateInfo{
+                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+            queueCreateInfo.queueFamilyIndex = familyIndex;
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &queuePriority;
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
+
+        const char* deviceExtensions[] = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+        VkDeviceCreateInfo createInfo{
+            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+        createInfo.queueCreateInfoCount =
+            static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.pQueueCreateInfos = queueCreateInfos.data();
+        createInfo.enabledExtensionCount = 1;
+        createInfo.ppEnabledExtensionNames = deviceExtensions;
+
+        check(
+            vkCreateDevice(gpu, &createInfo, nullptr, &device),
+            "Creating logical device");
+
+        vkGetDeviceQueue(
+            device,
+            *queues.graphicsFamily,
+            0,
+            &graphicsQueue);
+        vkGetDeviceQueue(
+            device,
+            *queues.presentFamily,
+            0,
+            &presentQueue);
     }
 
-    VkSurfaceFormatKHR chooseFormat(const std::vector<VkSurfaceFormatKHR>& formats) const {
-        for (const auto& format : formats)
-            if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) return format;
+    // ----------------------- Swapchain setup ---------------------------
+
+    VkSurfaceFormatKHR chooseSurfaceFormat(
+        const std::vector<VkSurfaceFormatKHR>& formats) const {
+        // Prefer an sRGB format because it gives the clear color a more
+        // predictable appearance on a normal monitor.
+        for (const VkSurfaceFormatKHR& format : formats) {
+            if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+                format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                return format;
+            }
+        }
+
+        // The GPU guarantees that the list contains at least one format.
         return formats.front();
     }
 
-    VkExtent2D chooseExtent(const VkSurfaceCapabilitiesKHR& capabilities) const {
-        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) return capabilities.currentExtent;
-        int width{}, height{};
+    VkExtent2D chooseSwapchainExtent(
+        const VkSurfaceCapabilitiesKHR& capabilities) const {
+        // Some window systems provide the exact size for us.
+        if (capabilities.currentExtent.width !=
+            std::numeric_limits<uint32_t>::max()) {
+            return capabilities.currentExtent;
+        }
+
+        // Otherwise, ask GLFW for the framebuffer size.  It can be different
+        // from the window size on high-DPI displays, so use the framebuffer
+        // dimensions rather than the original window dimensions.
+        int width{};
+        int height{};
         glfwGetFramebufferSize(window, &width, &height);
-        return {std::clamp(static_cast<uint32_t>(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-                std::clamp(static_cast<uint32_t>(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height)};
+
+        VkExtent2D extent{};
+        extent.width = std::clamp(
+            static_cast<uint32_t>(width),
+            capabilities.minImageExtent.width,
+            capabilities.maxImageExtent.width);
+        extent.height = std::clamp(
+            static_cast<uint32_t>(height),
+            capabilities.minImageExtent.height,
+            capabilities.maxImageExtent.height);
+        return extent;
     }
 
     void createSwapchain() {
         VkSurfaceCapabilitiesKHR capabilities{};
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu, surface, &capabilities);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+            gpu,
+            surface,
+            &capabilities);
+
         uint32_t formatCount{};
-        vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &formatCount, nullptr);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(
+            gpu,
+            surface,
+            &formatCount,
+            nullptr);
+
         std::vector<VkSurfaceFormatKHR> formats(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(gpu, surface, &formatCount, formats.data());
-        const auto format = chooseFormat(formats);
-        swapchainFormat = format.format;
-        swapchainExtent = chooseExtent(capabilities);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(
+            gpu,
+            surface,
+            &formatCount,
+            formats.data());
+
+        const VkSurfaceFormatKHR surfaceFormat = chooseSurfaceFormat(formats);
+        swapchainFormat = surfaceFormat.format;
+        swapchainExtent = chooseSwapchainExtent(capabilities);
+
+        // Ask for one more image than the minimum so the GPU and CPU have
+        // some room to work independently.  Respect the driver's maximum.
         uint32_t imageCount = capabilities.minImageCount + 1;
-        if (capabilities.maxImageCount && imageCount > capabilities.maxImageCount) imageCount = capabilities.maxImageCount;
-        const auto queues = queuesFor(gpu);
-        const uint32_t indices[] = {*queues.graphics, *queues.present};
-        VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
-        info.surface = surface; info.minImageCount = imageCount; info.imageFormat = swapchainFormat; info.imageColorSpace = format.colorSpace;
-        info.imageExtent = swapchainExtent; info.imageArrayLayers = 1; info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        if (*queues.graphics != *queues.present) { info.imageSharingMode = VK_SHARING_MODE_CONCURRENT; info.queueFamilyIndexCount = 2; info.pQueueFamilyIndices = indices; }
-        else info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        info.preTransform = capabilities.currentTransform; info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        info.presentMode = VK_PRESENT_MODE_FIFO_KHR; // Always available and synced to the display.
-        info.clipped = VK_TRUE;
-        check(vkCreateSwapchainKHR(device, &info, nullptr, &swapchain), "Creating swapchain");
+        if (capabilities.maxImageCount != 0 &&
+            imageCount > capabilities.maxImageCount) {
+            imageCount = capabilities.maxImageCount;
+        }
+
+        const QueueFamilies queues = findQueueFamilies(gpu);
+        const uint32_t queueFamilyIndices[] = {
+            *queues.graphicsFamily,
+            *queues.presentFamily};
+
+        VkSwapchainCreateInfoKHR createInfo{
+            VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+        createInfo.surface = surface;
+        createInfo.minImageCount = imageCount;
+        createInfo.imageFormat = swapchainFormat;
+        createInfo.imageColorSpace = surfaceFormat.colorSpace;
+        createInfo.imageExtent = swapchainExtent;
+        createInfo.imageArrayLayers = 1;
+        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+        // If the queue families differ, both queues need access to the
+        // swapchain images.  Otherwise, exclusive access is more efficient.
+        if (*queues.graphicsFamily != *queues.presentFamily) {
+            createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            createInfo.queueFamilyIndexCount = 2;
+            createInfo.pQueueFamilyIndices = queueFamilyIndices;
+        } else {
+            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        }
+
+        createInfo.preTransform = capabilities.currentTransform;
+        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        // FIFO is guaranteed to be available and is synchronized to the
+        // display, which prevents tearing.
+        createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+        createInfo.clipped = VK_TRUE;
+
+        check(
+            vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain),
+            "Creating swapchain");
+
         vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr);
         swapchainImages.resize(imageCount);
-        vkGetSwapchainImagesKHR(device, swapchain, &imageCount, swapchainImages.data());
-        createImageViews(); createRenderPass(); createFramebuffers();
+        vkGetSwapchainImagesKHR(
+            device,
+            swapchain,
+            &imageCount,
+            swapchainImages.data());
+
+        createImageViews();
+        createRenderPass();
+        createFramebuffers();
     }
 
     void createImageViews() {
         imageViews.resize(swapchainImages.size());
-        for (size_t i = 0; i < swapchainImages.size(); ++i) {
-            VkImageViewCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-            info.image = swapchainImages[i]; info.viewType = VK_IMAGE_VIEW_TYPE_2D; info.format = swapchainFormat;
-            info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; info.subresourceRange.levelCount = 1; info.subresourceRange.layerCount = 1;
-            check(vkCreateImageView(device, &info, nullptr, &imageViews[i]), "Creating image view");
+
+        for (size_t imageIndex = 0; imageIndex < swapchainImages.size();
+             ++imageIndex) {
+            VkImageViewCreateInfo createInfo{
+                VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            createInfo.image = swapchainImages[imageIndex];
+            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            createInfo.format = swapchainFormat;
+            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.layerCount = 1;
+
+            check(
+                vkCreateImageView(
+                    device,
+                    &createInfo,
+                    nullptr,
+                    &imageViews[imageIndex]),
+                "Creating image view");
         }
     }
 
     void createRenderPass() {
-        VkAttachmentDescription color{};
-        color.format = swapchainFormat; color.samples = VK_SAMPLE_COUNT_1_BIT; color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        // This render pass has one color attachment: the image that will be
+        // displayed in the window.  CLEAR starts it with our background color
+        // and STORE keeps the result for presentation.
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapchainFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentReference colorReference{
+            0,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
         VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &reference;
-        VkRenderPassCreateInfo info{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        info.attachmentCount = 1; info.pAttachments = &color; info.subpassCount = 1; info.pSubpasses = &subpass;
-        check(vkCreateRenderPass(device, &info, nullptr, &renderPass), "Creating render pass");
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorReference;
+
+        VkRenderPassCreateInfo createInfo{
+            VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+        createInfo.attachmentCount = 1;
+        createInfo.pAttachments = &colorAttachment;
+        createInfo.subpassCount = 1;
+        createInfo.pSubpasses = &subpass;
+
+        check(
+            vkCreateRenderPass(device, &createInfo, nullptr, &renderPass),
+            "Creating render pass");
     }
 
     void createFramebuffers() {
         framebuffers.resize(imageViews.size());
-        for (size_t i = 0; i < imageViews.size(); ++i) {
-            VkFramebufferCreateInfo info{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-            info.renderPass = renderPass; info.attachmentCount = 1; info.pAttachments = &imageViews[i];
-            info.width = swapchainExtent.width; info.height = swapchainExtent.height; info.layers = 1;
-            check(vkCreateFramebuffer(device, &info, nullptr, &framebuffers[i]), "Creating framebuffer");
+
+        for (size_t imageIndex = 0; imageIndex < imageViews.size();
+             ++imageIndex) {
+            VkFramebufferCreateInfo createInfo{
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            createInfo.renderPass = renderPass;
+            createInfo.attachmentCount = 1;
+            createInfo.pAttachments = &imageViews[imageIndex];
+            createInfo.width = swapchainExtent.width;
+            createInfo.height = swapchainExtent.height;
+            createInfo.layers = 1;
+
+            check(
+                vkCreateFramebuffer(
+                    device,
+                    &createInfo,
+                    nullptr,
+                    &framebuffers[imageIndex]),
+                "Creating framebuffer");
         }
     }
 
+    // --------------------- Commands and synchronization ----------------
+
     void createCommandPool() {
-        VkCommandPoolCreateInfo info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-        info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; info.queueFamilyIndex = *queuesFor(gpu).graphics;
-        check(vkCreateCommandPool(device, &info, nullptr, &commandPool), "Creating command pool");
+        VkCommandPoolCreateInfo createInfo{
+            VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+        createInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        createInfo.queueFamilyIndex = *findQueueFamilies(gpu).graphicsFamily;
+
+        check(
+            vkCreateCommandPool(device, &createInfo, nullptr, &commandPool),
+            "Creating command pool");
     }
 
     void createCommandBuffers() {
-        VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-        info.commandPool = commandPool; info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; info.commandBufferCount = kFramesInFlight;
-        check(vkAllocateCommandBuffers(device, &info, commandBuffers.data()), "Allocating command buffers");
+        VkCommandBufferAllocateInfo allocateInfo{
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        allocateInfo.commandPool = commandPool;
+        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocateInfo.commandBufferCount = kFramesInFlight;
+
+        check(
+            vkAllocateCommandBuffers(
+                device,
+                &allocateInfo,
+                commandBuffers.data()),
+            "Allocating command buffers");
     }
 
     void createSyncObjects() {
-        VkSemaphoreCreateInfo semaphore{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-        for (uint32_t i = 0; i < kFramesInFlight; ++i) {
-            check(vkCreateSemaphore(device, &semaphore, nullptr, &imageAvailable[i]), "Creating image semaphore");
-            check(vkCreateSemaphore(device, &semaphore, nullptr, &renderFinished[i]), "Creating render semaphore");
-            check(vkCreateFence(device, &fence, nullptr, &inFlight[i]), "Creating fence");
+        VkSemaphoreCreateInfo semaphoreInfo{
+            VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+        VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        // Start signaled so the first frame does not wait forever for a
+        // previous frame that does not exist yet.
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        for (uint32_t frameIndex = 0; frameIndex < kFramesInFlight;
+             ++frameIndex) {
+            check(
+                vkCreateSemaphore(
+                    device,
+                    &semaphoreInfo,
+                    nullptr,
+                    &imageAvailable[frameIndex]),
+                "Creating image semaphore");
+            check(
+                vkCreateSemaphore(
+                    device,
+                    &semaphoreInfo,
+                    nullptr,
+                    &renderFinished[frameIndex]),
+                "Creating render semaphore");
+            check(
+                vkCreateFence(
+                    device,
+                    &fenceInfo,
+                    nullptr,
+                    &inFlight[frameIndex]),
+                "Creating fence");
         }
     }
 
-    void recordCommandBuffer(VkCommandBuffer command, uint32_t imageIndex) {
-        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        check(vkBeginCommandBuffer(command, &begin), "Beginning command buffer");
+    // This is the main extension point for future graphics work.  To draw
+    // something later, add a graphics pipeline and vkCmdDraw calls between
+    // vkCmdBeginRenderPass() and vkCmdEndRenderPass().
+    void recordCommandBuffer(
+        VkCommandBuffer commandBuffer,
+        uint32_t imageIndex) {
+        VkCommandBufferBeginInfo beginInfo{
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        check(
+            vkBeginCommandBuffer(commandBuffer, &beginInfo),
+            "Beginning command buffer");
 
-        // The intentionally empty screen. Add graphics pipelines and vkCmdDraw calls here later.
-        VkClearValue clear{};
-        clear.color = {{0.015f, 0.020f, 0.035f, 1.0f}};
-        VkRenderPassBeginInfo render{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-        render.renderPass = renderPass; render.framebuffer = framebuffers[imageIndex]; render.renderArea.extent = swapchainExtent;
-        render.clearValueCount = 1; render.pClearValues = &clear;
-        vkCmdBeginRenderPass(command, &render, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdEndRenderPass(command);
-        check(vkEndCommandBuffer(command), "Ending command buffer");
+        // For now, the render pass only clears the window to a dark blue.
+        VkClearValue clearColor{};
+        clearColor.color = {{0.015f, 0.020f, 0.035f, 1.0f}};
+
+        VkRenderPassBeginInfo renderPassInfo{
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = framebuffers[imageIndex];
+        renderPassInfo.renderArea.extent = swapchainExtent;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(
+            commandBuffer,
+            &renderPassInfo,
+            VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdEndRenderPass(commandBuffer);
+
+        check(
+            vkEndCommandBuffer(commandBuffer),
+            "Ending command buffer");
     }
 
+    // ----------------------------- Drawing ------------------------------
+
     void drawFrame() {
-        check(vkWaitForFences(device, 1, &inFlight[frame], VK_TRUE, UINT64_MAX), "Waiting for previous frame");
+        // Do not reuse this frame's command buffer until the GPU has finished
+        // using it from the previous frame.
+        check(
+            vkWaitForFences(
+                device,
+                1,
+                &inFlight[currentFrame],
+                VK_TRUE,
+                UINT64_MAX),
+            "Waiting for previous frame");
+
         uint32_t imageIndex{};
-        const VkResult acquired = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailable[frame], VK_NULL_HANDLE, &imageIndex);
-        if (acquired == VK_ERROR_OUT_OF_DATE_KHR) { recreateSwapchain(); return; }
-        if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) check(acquired, "Acquiring swapchain image");
-        check(vkResetFences(device, 1, &inFlight[frame]), "Resetting fence");
-        check(vkResetCommandBuffer(commandBuffers[frame], 0), "Resetting command buffer");
-        recordCommandBuffer(commandBuffers[frame], imageIndex);
-        const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        submit.waitSemaphoreCount = 1; submit.pWaitSemaphores = &imageAvailable[frame]; submit.pWaitDstStageMask = &waitStage;
-        submit.commandBufferCount = 1; submit.pCommandBuffers = &commandBuffers[frame];
-        submit.signalSemaphoreCount = 1; submit.pSignalSemaphores = &renderFinished[frame];
-        check(vkQueueSubmit(graphicsQueue, 1, &submit, inFlight[frame]), "Submitting frame");
-        VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-        present.waitSemaphoreCount = 1; present.pWaitSemaphores = &renderFinished[frame];
-        present.swapchainCount = 1; present.pSwapchains = &swapchain; present.pImageIndices = &imageIndex;
-        const VkResult presented = vkQueuePresentKHR(presentQueue, &present);
-        if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR || resized) recreateSwapchain();
-        else if (presented != VK_SUCCESS) check(presented, "Presenting frame");
-        frame = (frame + 1) % kFramesInFlight;
+        const VkResult acquireResult = vkAcquireNextImageKHR(
+            device,
+            swapchain,
+            UINT64_MAX,
+            imageAvailable[currentFrame],
+            VK_NULL_HANDLE,
+            &imageIndex);
+
+        // The swapchain is no longer compatible with the window, usually
+        // because it was resized.  Recreate it and try again next frame.
+        if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+            recreateSwapchain();
+            return;
+        }
+
+        if (acquireResult != VK_SUCCESS &&
+            acquireResult != VK_SUBOPTIMAL_KHR) {
+            check(acquireResult, "Acquiring swapchain image");
+        }
+
+        check(
+            vkResetFences(device, 1, &inFlight[currentFrame]),
+            "Resetting fence");
+        check(
+            vkResetCommandBuffer(commandBuffers[currentFrame], 0),
+            "Resetting command buffer");
+
+        recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
+
+        // Wait until the acquired image is ready for color-attachment work.
+        const VkPipelineStageFlags waitStage =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &imageAvailable[currentFrame];
+        submitInfo.pWaitDstStageMask = &waitStage;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &renderFinished[currentFrame];
+
+        check(
+            vkQueueSubmit(
+                graphicsQueue,
+                1,
+                &submitInfo,
+                inFlight[currentFrame]),
+            "Submitting frame");
+
+        // Presentation waits for rendering to signal that the image is ready.
+        VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &renderFinished[currentFrame];
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &swapchain;
+        presentInfo.pImageIndices = &imageIndex;
+
+        const VkResult presentResult =
+            vkQueuePresentKHR(presentQueue, &presentInfo);
+
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR ||
+            presentResult == VK_SUBOPTIMAL_KHR ||
+            resized) {
+            recreateSwapchain();
+        } else if (presentResult != VK_SUCCESS) {
+            check(presentResult, "Presenting frame");
+        }
+
+        currentFrame = (currentFrame + 1) % kFramesInFlight;
     }
 
     void updateFps() {
         ++frameCount;
+
         const auto now = std::chrono::steady_clock::now();
-        const float seconds = std::chrono::duration<float>(now - fpsStart).count();
-        if (seconds < 0.5f) return;
-        glfwSetWindowTitle(window, ("WaveSim | FPS: " + std::to_string(static_cast<uint32_t>(frameCount / seconds))).c_str());
-        fpsStart = now; frameCount = 0;
+        const float seconds =
+            std::chrono::duration<float>(now - fpsStart).count();
+
+        // Updating twice per second is enough for a title-bar counter and
+        // avoids changing the title every single frame.
+        if (seconds < 0.5f) {
+            return;
+        }
+
+        const uint32_t framesPerSecond =
+            static_cast<uint32_t>(frameCount / seconds);
+        const std::string title =
+            "WaveSim | FPS: " + std::to_string(framesPerSecond);
+        glfwSetWindowTitle(window, title.c_str());
+
+        fpsStart = now;
+        frameCount = 0;
     }
 
-    void loop() {
-        while (!glfwWindowShouldClose(window)) { glfwPollEvents(); drawFrame(); updateFps(); }
+    void mainLoop() {
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+            drawFrame();
+            updateFps();
+        }
+
+        // Make sure the GPU is finished before cleanup destroys its objects.
         vkDeviceWaitIdle(device);
     }
 
+    // --------------------------- Resize support ------------------------
+
     void destroySwapchain() {
-        for (auto framebuffer : framebuffers) vkDestroyFramebuffer(device, framebuffer, nullptr);
+        for (VkFramebuffer framebuffer : framebuffers) {
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
         framebuffers.clear();
-        if (renderPass) vkDestroyRenderPass(device, renderPass, nullptr);
+
+        if (renderPass) {
+            vkDestroyRenderPass(device, renderPass, nullptr);
+        }
         renderPass = {};
-        for (auto view : imageViews) vkDestroyImageView(device, view, nullptr);
+
+        for (VkImageView imageView : imageViews) {
+            vkDestroyImageView(device, imageView, nullptr);
+        }
         imageViews.clear();
-        if (swapchain) vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+        if (swapchain) {
+            vkDestroySwapchainKHR(device, swapchain, nullptr);
+        }
         swapchain = {};
+        swapchainImages.clear();
     }
 
     void recreateSwapchain() {
-        int width{}, height{};
+        int width{};
+        int height{};
         glfwGetFramebufferSize(window, &width, &height);
-        while (!width || !height) { glfwWaitEvents(); glfwGetFramebufferSize(window, &width, &height); }
-        vkDeviceWaitIdle(device); destroySwapchain(); createSwapchain(); resized = false;
+
+        // A minimized window can have a framebuffer of size 0.  Wait until
+        // it has a usable size before asking Vulkan to recreate its images.
+        while (width == 0 || height == 0) {
+            glfwWaitEvents();
+            glfwGetFramebufferSize(window, &width, &height);
+        }
+
+        vkDeviceWaitIdle(device);
+        destroySwapchain();
+        createSwapchain();
+        resized = false;
     }
 
+    // ----------------------------- Cleanup ------------------------------
+
     void cleanup() {
-        if (device) vkDeviceWaitIdle(device);
-        for (uint32_t i = 0; i < kFramesInFlight; ++i) {
-            if (inFlight[i]) vkDestroyFence(device, inFlight[i], nullptr);
-            if (renderFinished[i]) vkDestroySemaphore(device, renderFinished[i], nullptr);
-            if (imageAvailable[i]) vkDestroySemaphore(device, imageAvailable[i], nullptr);
+        if (device) {
+            vkDeviceWaitIdle(device);
         }
+
+        for (uint32_t frameIndex = 0; frameIndex < kFramesInFlight;
+             ++frameIndex) {
+            if (inFlight[frameIndex]) {
+                vkDestroyFence(device, inFlight[frameIndex], nullptr);
+            }
+            if (renderFinished[frameIndex]) {
+                vkDestroySemaphore(device, renderFinished[frameIndex], nullptr);
+            }
+            if (imageAvailable[frameIndex]) {
+                vkDestroySemaphore(device, imageAvailable[frameIndex], nullptr);
+            }
+        }
+
         destroySwapchain();
-        if (commandPool) vkDestroyCommandPool(device, commandPool, nullptr);
-        if (device) vkDestroyDevice(device, nullptr);
-        if (surface) vkDestroySurfaceKHR(instance, surface, nullptr);
-        if (instance) vkDestroyInstance(instance, nullptr);
-        if (window) glfwDestroyWindow(window);
+
+        if (commandPool) {
+            vkDestroyCommandPool(device, commandPool, nullptr);
+        }
+        if (device) {
+            vkDestroyDevice(device, nullptr);
+        }
+        if (surface) {
+            vkDestroySurfaceKHR(instance, surface, nullptr);
+        }
+        if (instance) {
+            vkDestroyInstance(instance, nullptr);
+        }
+        if (window) {
+            glfwDestroyWindow(window);
+        }
+
         glfwTerminate();
     }
 };
+
+class WaveField {
+public:
+    WaveField(int width, int height)
+        : width_(width), height_(height) {
+    }
+
+private:
+    int width_;
+    int height_;
+
+    struct DemoVertex {
+        float x;
+        float y;
+        float red;
+        float green;
+        float blue;
+    };
+
+    const std::array<DemoVertex, 3> triangle = {{
+        {0.0f, -0.6f, 1.0f, 0.2f, 0.2f},
+        {0.6f,  0.6f, 0.2f, 1.0f, 0.2f},
+        {-0.6f, 0.5f, 0.2f, 0.4f, 1.0f}
+    }};
+
+    createGraphicsPipeline(){
+        
+    }
+};
+
 } // namespace
 
 int main() {
-    try { App{}.run(); return EXIT_SUCCESS; }
-    catch (const std::exception& error) { std::cerr << "WaveSim error: " << error.what() << '\n'; return EXIT_FAILURE; }
+    try {
+        App{}.run();
+        return EXIT_SUCCESS;
+    } catch (const std::exception& error) {
+        std::cerr << "WaveSim error: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
 }
