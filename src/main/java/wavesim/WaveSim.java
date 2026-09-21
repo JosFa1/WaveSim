@@ -14,6 +14,9 @@ package wavesim;
 public final class WaveSim {
 
     public static void main(String[] args) {
+        // Vulkan device extension lists can exceed LWJGL's default native
+        // stack size on systems with multiple GPUs and driver extensions.
+        System.setProperty("org.lwjgl.system.stackSize", "1048576");
         new WaveSim().run();
     }
 

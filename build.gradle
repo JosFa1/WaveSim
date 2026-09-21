@@ -10,7 +10,17 @@ repositories {
 }
 
 def lwjglVersion = '3.3.3'
-def lwjglNatives = 'natives-linux'
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def lwjglNatives
+if (osName.contains('windows')) {
+    lwjglNatives = 'natives-windows'
+} else if (osName.contains('mac')) {
+    lwjglNatives = 'natives-macos'
+} else if (osName.contains('linux')) {
+    lwjglNatives = 'natives-linux'
+} else {
+    throw new GradleException("Unsupported operating system: ${System.getProperty('os.name')}")
+}
 
 dependencies {
     implementation "org.lwjgl:lwjgl:${lwjglVersion}"
@@ -23,6 +33,10 @@ dependencies {
 
 application {
     mainClass = 'wavesim.WaveSim'
+    applicationDefaultJvmArgs = [
+            '-Dorg.lwjgl.system.stackSize=1048576',
+            '--enable-native-access=ALL-UNNAMED'
+    ]
 }
 
 def generatedShaders = layout.buildDirectory.dir('generated/resources/shaders')
@@ -37,7 +51,12 @@ tasks.register('compileShaders') {
     doLast {
         def outputDirectory = generatedShaders.get().asFile
         outputDirectory.mkdirs()
-        def glslc = providers.environmentVariable('GLSLC').orElse('glslc').get()
+        def vulkanSdk = System.getenv('VULKAN_SDK')
+        def sdkCompiler = vulkanSdk == null ? null : new File(
+                vulkanSdk,
+                osName.contains('windows') ? 'Bin/glslc.exe' : 'bin/glslc'
+        )
+        def glslc = System.getenv('GLSLC') ?: (sdkCompiler?.isFile() ? sdkCompiler.absolutePath : 'glslc')
 
         fileTree('shaders').matching {
             include 'text.vert'

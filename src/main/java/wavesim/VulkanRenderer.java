@@ -868,23 +868,32 @@ public final class VulkanRenderer {
      * Rebuilds the small texture that displays the FPS counter.
      */
     public void updateFpsText(String text) {
+        // Create an ARGB image that will hold the updated FPS overlay.
         BufferedImage image = new BufferedImage(TEXTURE_WIDTH, TEXTURE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
+
+        // Clear the previous overlay so transparent pixels remain transparent.
         graphics.setComposite(AlphaComposite.Clear);
         graphics.fillRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
+
+        // Draw a semi-transparent background behind the FPS text.
         graphics.setComposite(AlphaComposite.SrcOver);
         graphics.setColor(new Color(0, 0, 0, 165));
         graphics.fillRoundRect(0, 0, 128, 48, 8, 8);
+
+        // Configure readable text rendering and draw the supplied FPS value.
         graphics.setColor(Color.WHITE);
         graphics.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 24));
         graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         graphics.drawString(text, 12, 32);
         graphics.dispose();
 
+        // Allocate a native RGBA buffer for uploading the image to Vulkan.
         ByteBuffer pixels = memAlloc(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4);
         try {
             for (int y = 0; y < TEXTURE_HEIGHT; y++) {
                 for (int x = 0; x < TEXTURE_WIDTH; x++) {
+                    // Java stores pixels as ARGB; Vulkan expects the channels in RGBA order.
                     int argb = image.getRGB(x, y);
                     pixels.put((byte) ((argb >>> 16) & 0xFF));
                     pixels.put((byte) ((argb >>> 8) & 0xFF));
@@ -892,9 +901,12 @@ public final class VulkanRenderer {
                     pixels.put((byte) ((argb >>> 24) & 0xFF));
                 }
             }
+
+            // Prepare the buffer for reading before passing it to the upload routine.
             pixels.flip();
             uploadTextPixels(pixels);
         } finally {
+            // Always release the native memory, including when uploading fails.
             memFree(pixels);
         }
     }

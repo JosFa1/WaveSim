@@ -14,7 +14,44 @@ experiment belongs in `recordCommandBuffer()` in
 - Java 17 or newer
 - Gradle 9 or newer
 - A Vulkan loader and working Vulkan driver
-- `glslc` on `PATH` for compiling the two small shaders
+- `glslc` on `PATH`, in `VULKAN_SDK`, or configured through `GLSLC`
+
+## Windows setup
+
+Open PowerShell and install Java and the Vulkan SDK with WinGet:
+
+```powershell
+winget install --id Microsoft.OpenJDK.21 --exact
+winget install --id KhronosGroup.VulkanSDK --exact
+```
+
+Gradle is easiest to install with Scoop. If Scoop is not installed yet, run
+these commands first:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+scoop install gradle
+```
+
+Close and reopen PowerShell after installation so the new commands and Vulkan
+environment variables are available. From the project directory, verify the
+toolchain and build:
+
+```powershell
+java --version
+gradle --version
+vulkaninfo --summary
+gradle clean build
+```
+
+The Vulkan SDK normally sets `VULKAN_SDK` automatically. If the compiler is
+installed elsewhere, provide its full path for the current PowerShell session:
+
+```powershell
+$env:GLSLC = 'C:\path\to\glslc.exe'
+gradle clean build
+```
 
 On CachyOS/Arch, install the build dependencies with:
 
@@ -27,9 +64,9 @@ already present. For example, Intel systems use `vulkan-intel`, AMD systems
 use `vulkan-radeon`, and NVIDIA systems normally use `nvidia-utils`.
 
 The Java, GLFW, and Vulkan LWJGL bindings are downloaded from Maven Central by
-Gradle. The Linux native bindings are selected in `build.gradle`; a system
-`glfw` package and Vulkan development headers are not required for this Java
-build.
+Gradle. The matching LWJGL native bindings are selected automatically for
+Windows, macOS, and Linux; a system `glfw` package and Vulkan development
+headers are not required for this Java build.
 
 You can check the prerequisites before building:
 
@@ -52,7 +89,8 @@ gradle run
 and application distributions under `build/`. `gradle run` opens the Vulkan
 window and keeps running until the window is closed.
 
-If `glslc` is installed outside `PATH`, provide its path through `GLSLC`:
+If `glslc` is installed outside `PATH`, set `VULKAN_SDK` to the SDK directory
+or provide the compiler path through `GLSLC`:
 
 ```bash
 GLSLC=/path/to/glslc gradle clean build
