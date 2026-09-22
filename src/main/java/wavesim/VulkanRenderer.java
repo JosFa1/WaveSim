@@ -1,65 +1,5 @@
 package wavesim;
 
-import org.lwjgl.glfw.GLFWVulkan;
-import org.lwjgl.PointerBuffer;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.VkApplicationInfo;
-import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkCommandBufferAllocateInfo;
-import org.lwjgl.vulkan.VkCommandBufferBeginInfo;
-import org.lwjgl.vulkan.VkCommandPoolCreateInfo;
-import org.lwjgl.vulkan.VkDevice;
-import org.lwjgl.vulkan.VkDeviceCreateInfo;
-import org.lwjgl.vulkan.VkDeviceQueueCreateInfo;
-import org.lwjgl.vulkan.VkExtent2D;
-import org.lwjgl.vulkan.VkFenceCreateInfo;
-import org.lwjgl.vulkan.VkFramebufferCreateInfo;
-import org.lwjgl.vulkan.VkImageCreateInfo;
-import org.lwjgl.vulkan.VkImageMemoryBarrier;
-import org.lwjgl.vulkan.VkImageViewCreateInfo;
-import org.lwjgl.vulkan.VkInstance;
-import org.lwjgl.vulkan.VkInstanceCreateInfo;
-import org.lwjgl.vulkan.VkMemoryAllocateInfo;
-import org.lwjgl.vulkan.VkMemoryRequirements;
-import org.lwjgl.vulkan.VkPhysicalDevice;
-import org.lwjgl.vulkan.VkPhysicalDeviceMemoryProperties;
-import org.lwjgl.vulkan.VkQueue;
-import org.lwjgl.vulkan.VkQueueFamilyProperties;
-import org.lwjgl.vulkan.VkRenderPassBeginInfo;
-import org.lwjgl.vulkan.VkRenderPassCreateInfo;
-import org.lwjgl.vulkan.VkSemaphoreCreateInfo;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
-import org.lwjgl.vulkan.VkSubmitInfo;
-import org.lwjgl.vulkan.VkSwapchainCreateInfoKHR;
-import org.lwjgl.vulkan.VkSurfaceCapabilitiesKHR;
-import org.lwjgl.vulkan.VkSurfaceFormatKHR;
-import org.lwjgl.vulkan.VkViewport;
-import org.lwjgl.vulkan.VkAttachmentDescription;
-import org.lwjgl.vulkan.VkAttachmentReference;
-import org.lwjgl.vulkan.VkBufferCreateInfo;
-import org.lwjgl.vulkan.VkClearValue;
-import org.lwjgl.vulkan.VkDescriptorImageInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
-import org.lwjgl.vulkan.VkDescriptorPoolSize;
-import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
-import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkWriteDescriptorSet;
-import org.lwjgl.vulkan.VkPipelineColorBlendAttachmentState;
-import org.lwjgl.vulkan.VkPipelineColorBlendStateCreateInfo;
-import org.lwjgl.vulkan.VkPipelineDynamicStateCreateInfo;
-import org.lwjgl.vulkan.VkPipelineInputAssemblyStateCreateInfo;
-import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
-import org.lwjgl.vulkan.VkPipelineMultisampleStateCreateInfo;
-import org.lwjgl.vulkan.VkPipelineRasterizationStateCreateInfo;
-import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
-import org.lwjgl.vulkan.VkPipelineVertexInputStateCreateInfo;
-import org.lwjgl.vulkan.VkPipelineViewportStateCreateInfo;
-import org.lwjgl.vulkan.VkGraphicsPipelineCreateInfo;
-import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkPresentInfoKHR;
-import org.lwjgl.vulkan.VkSamplerCreateInfo;
-
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Font;
@@ -73,11 +13,254 @@ import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.glfw.GLFWVulkan;
+import org.lwjgl.system.MemoryStack;
 import static org.lwjgl.system.MemoryStack.stackPush;
-import static org.lwjgl.system.MemoryUtil.*;
-import static org.lwjgl.vulkan.KHRSurface.*;
-import static org.lwjgl.vulkan.KHRSwapchain.*;
-import static org.lwjgl.vulkan.VK10.*;
+import static org.lwjgl.system.MemoryUtil.memAddress;
+import static org.lwjgl.system.MemoryUtil.memAlloc;
+import static org.lwjgl.system.MemoryUtil.memByteBuffer;
+import static org.lwjgl.system.MemoryUtil.memFree;
+import static org.lwjgl.vulkan.KHRSurface.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+import static org.lwjgl.vulkan.KHRSurface.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+import static org.lwjgl.vulkan.KHRSurface.VK_PRESENT_MODE_FIFO_KHR;
+import static org.lwjgl.vulkan.KHRSurface.VK_PRESENT_MODE_IMMEDIATE_KHR;
+import static org.lwjgl.vulkan.KHRSurface.vkDestroySurfaceKHR;
+import static org.lwjgl.vulkan.KHRSurface.vkGetPhysicalDeviceSurfaceCapabilitiesKHR;
+import static org.lwjgl.vulkan.KHRSurface.vkGetPhysicalDeviceSurfaceFormatsKHR;
+import static org.lwjgl.vulkan.KHRSurface.vkGetPhysicalDeviceSurfacePresentModesKHR;
+import static org.lwjgl.vulkan.KHRSurface.vkGetPhysicalDeviceSurfaceSupportKHR;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_ERROR_OUT_OF_DATE_KHR;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+import static org.lwjgl.vulkan.KHRSwapchain.VK_SUBOPTIMAL_KHR;
+import static org.lwjgl.vulkan.KHRSwapchain.vkAcquireNextImageKHR;
+import static org.lwjgl.vulkan.KHRSwapchain.vkCreateSwapchainKHR;
+import static org.lwjgl.vulkan.KHRSwapchain.vkDestroySwapchainKHR;
+import static org.lwjgl.vulkan.KHRSwapchain.vkGetSwapchainImagesKHR;
+import static org.lwjgl.vulkan.KHRSwapchain.vkQueuePresentKHR;
+import static org.lwjgl.vulkan.VK10.VK_ACCESS_SHADER_READ_BIT;
+import static org.lwjgl.vulkan.VK10.VK_ACCESS_TRANSFER_WRITE_BIT;
+import static org.lwjgl.vulkan.VK10.VK_API_VERSION_1_0;
+import static org.lwjgl.vulkan.VK10.VK_ATTACHMENT_LOAD_OP_CLEAR;
+import static org.lwjgl.vulkan.VK10.VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+import static org.lwjgl.vulkan.VK10.VK_ATTACHMENT_STORE_OP_DONT_CARE;
+import static org.lwjgl.vulkan.VK10.VK_ATTACHMENT_STORE_OP_STORE;
+import static org.lwjgl.vulkan.VK10.VK_BLEND_FACTOR_ONE;
+import static org.lwjgl.vulkan.VK10.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+import static org.lwjgl.vulkan.VK10.VK_BLEND_FACTOR_SRC_ALPHA;
+import static org.lwjgl.vulkan.VK10.VK_BLEND_OP_ADD;
+import static org.lwjgl.vulkan.VK10.VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+import static org.lwjgl.vulkan.VK10.VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+import static org.lwjgl.vulkan.VK10.VK_COLOR_COMPONENT_A_BIT;
+import static org.lwjgl.vulkan.VK10.VK_COLOR_COMPONENT_B_BIT;
+import static org.lwjgl.vulkan.VK10.VK_COLOR_COMPONENT_G_BIT;
+import static org.lwjgl.vulkan.VK10.VK_COLOR_COMPONENT_R_BIT;
+import static org.lwjgl.vulkan.VK10.VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+import static org.lwjgl.vulkan.VK10.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+import static org.lwjgl.vulkan.VK10.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+import static org.lwjgl.vulkan.VK10.VK_CULL_MODE_NONE;
+import static org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+import static org.lwjgl.vulkan.VK10.VK_DYNAMIC_STATE_SCISSOR;
+import static org.lwjgl.vulkan.VK10.VK_DYNAMIC_STATE_VIEWPORT;
+import static org.lwjgl.vulkan.VK10.VK_FALSE;
+import static org.lwjgl.vulkan.VK10.VK_FENCE_CREATE_SIGNALED_BIT;
+import static org.lwjgl.vulkan.VK10.VK_FILTER_LINEAR;
+import static org.lwjgl.vulkan.VK10.VK_FORMAT_B8G8R8A8_SRGB;
+import static org.lwjgl.vulkan.VK10.VK_FORMAT_R8G8B8A8_UNORM;
+import static org.lwjgl.vulkan.VK10.VK_FRONT_FACE_COUNTER_CLOCKWISE;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_ASPECT_COLOR_BIT;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_UNDEFINED;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_TILING_OPTIMAL;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_TYPE_2D;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_USAGE_SAMPLED_BIT;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+import static org.lwjgl.vulkan.VK10.VK_IMAGE_VIEW_TYPE_2D;
+import static org.lwjgl.vulkan.VK10.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+import static org.lwjgl.vulkan.VK10.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+import static org.lwjgl.vulkan.VK10.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+import static org.lwjgl.vulkan.VK10.VK_NULL_HANDLE;
+import static org.lwjgl.vulkan.VK10.VK_PIPELINE_BIND_POINT_GRAPHICS;
+import static org.lwjgl.vulkan.VK10.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+import static org.lwjgl.vulkan.VK10.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+import static org.lwjgl.vulkan.VK10.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+import static org.lwjgl.vulkan.VK10.VK_PIPELINE_STAGE_TRANSFER_BIT;
+import static org.lwjgl.vulkan.VK10.VK_POLYGON_MODE_FILL;
+import static org.lwjgl.vulkan.VK10.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+import static org.lwjgl.vulkan.VK10.VK_QUEUE_FAMILY_IGNORED;
+import static org.lwjgl.vulkan.VK10.VK_QUEUE_GRAPHICS_BIT;
+import static org.lwjgl.vulkan.VK10.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+import static org.lwjgl.vulkan.VK10.VK_SAMPLER_MIPMAP_MODE_LINEAR;
+import static org.lwjgl.vulkan.VK10.VK_SAMPLE_COUNT_1_BIT;
+import static org.lwjgl.vulkan.VK10.VK_SHADER_STAGE_FRAGMENT_BIT;
+import static org.lwjgl.vulkan.VK10.VK_SHADER_STAGE_VERTEX_BIT;
+import static org.lwjgl.vulkan.VK10.VK_SHARING_MODE_CONCURRENT;
+import static org.lwjgl.vulkan.VK10.VK_SHARING_MODE_EXCLUSIVE;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_APPLICATION_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_SUBMIT_INFO;
+import static org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+import static org.lwjgl.vulkan.VK10.VK_SUBPASS_CONTENTS_INLINE;
+import static org.lwjgl.vulkan.VK10.VK_SUCCESS;
+import static org.lwjgl.vulkan.VK10.vkAllocateCommandBuffers;
+import static org.lwjgl.vulkan.VK10.vkAllocateDescriptorSets;
+import static org.lwjgl.vulkan.VK10.vkAllocateMemory;
+import static org.lwjgl.vulkan.VK10.vkBeginCommandBuffer;
+import static org.lwjgl.vulkan.VK10.vkBindBufferMemory;
+import static org.lwjgl.vulkan.VK10.vkBindImageMemory;
+import static org.lwjgl.vulkan.VK10.vkCmdBeginRenderPass;
+import static org.lwjgl.vulkan.VK10.vkCmdBindDescriptorSets;
+import static org.lwjgl.vulkan.VK10.vkCmdBindPipeline;
+import static org.lwjgl.vulkan.VK10.vkCmdCopyBufferToImage;
+import static org.lwjgl.vulkan.VK10.vkCmdDraw;
+import static org.lwjgl.vulkan.VK10.vkCmdEndRenderPass;
+import static org.lwjgl.vulkan.VK10.vkCmdPipelineBarrier;
+import static org.lwjgl.vulkan.VK10.vkCmdPushConstants;
+import static org.lwjgl.vulkan.VK10.vkCmdSetScissor;
+import static org.lwjgl.vulkan.VK10.vkCmdSetViewport;
+import static org.lwjgl.vulkan.VK10.vkCreateBuffer;
+import static org.lwjgl.vulkan.VK10.vkCreateCommandPool;
+import static org.lwjgl.vulkan.VK10.vkCreateDescriptorPool;
+import static org.lwjgl.vulkan.VK10.vkCreateDescriptorSetLayout;
+import static org.lwjgl.vulkan.VK10.vkCreateDevice;
+import static org.lwjgl.vulkan.VK10.vkCreateFence;
+import static org.lwjgl.vulkan.VK10.vkCreateFramebuffer;
+import static org.lwjgl.vulkan.VK10.vkCreateGraphicsPipelines;
+import static org.lwjgl.vulkan.VK10.vkCreateImage;
+import static org.lwjgl.vulkan.VK10.vkCreateImageView;
+import static org.lwjgl.vulkan.VK10.vkCreateInstance;
+import static org.lwjgl.vulkan.VK10.vkCreatePipelineLayout;
+import static org.lwjgl.vulkan.VK10.vkCreateRenderPass;
+import static org.lwjgl.vulkan.VK10.vkCreateSampler;
+import static org.lwjgl.vulkan.VK10.vkCreateSemaphore;
+import static org.lwjgl.vulkan.VK10.vkCreateShaderModule;
+import static org.lwjgl.vulkan.VK10.vkDestroyBuffer;
+import static org.lwjgl.vulkan.VK10.vkDestroyCommandPool;
+import static org.lwjgl.vulkan.VK10.vkDestroyDescriptorPool;
+import static org.lwjgl.vulkan.VK10.vkDestroyDescriptorSetLayout;
+import static org.lwjgl.vulkan.VK10.vkDestroyDevice;
+import static org.lwjgl.vulkan.VK10.vkDestroyFence;
+import static org.lwjgl.vulkan.VK10.vkDestroyFramebuffer;
+import static org.lwjgl.vulkan.VK10.vkDestroyImage;
+import static org.lwjgl.vulkan.VK10.vkDestroyImageView;
+import static org.lwjgl.vulkan.VK10.vkDestroyInstance;
+import static org.lwjgl.vulkan.VK10.vkDestroyPipeline;
+import static org.lwjgl.vulkan.VK10.vkDestroyPipelineLayout;
+import static org.lwjgl.vulkan.VK10.vkDestroyRenderPass;
+import static org.lwjgl.vulkan.VK10.vkDestroySampler;
+import static org.lwjgl.vulkan.VK10.vkDestroySemaphore;
+import static org.lwjgl.vulkan.VK10.vkDestroyShaderModule;
+import static org.lwjgl.vulkan.VK10.vkDeviceWaitIdle;
+import static org.lwjgl.vulkan.VK10.vkEndCommandBuffer;
+import static org.lwjgl.vulkan.VK10.vkEnumerateDeviceExtensionProperties;
+import static org.lwjgl.vulkan.VK10.vkEnumeratePhysicalDevices;
+import static org.lwjgl.vulkan.VK10.vkFreeCommandBuffers;
+import static org.lwjgl.vulkan.VK10.vkFreeMemory;
+import static org.lwjgl.vulkan.VK10.vkGetBufferMemoryRequirements;
+import static org.lwjgl.vulkan.VK10.vkGetDeviceQueue;
+import static org.lwjgl.vulkan.VK10.vkGetImageMemoryRequirements;
+import static org.lwjgl.vulkan.VK10.vkGetPhysicalDeviceMemoryProperties;
+import static org.lwjgl.vulkan.VK10.vkGetPhysicalDeviceQueueFamilyProperties;
+import static org.lwjgl.vulkan.VK10.vkMapMemory;
+import static org.lwjgl.vulkan.VK10.vkQueueSubmit;
+import static org.lwjgl.vulkan.VK10.vkQueueWaitIdle;
+import static org.lwjgl.vulkan.VK10.vkResetCommandBuffer;
+import static org.lwjgl.vulkan.VK10.vkResetFences;
+import static org.lwjgl.vulkan.VK10.vkUnmapMemory;
+import static org.lwjgl.vulkan.VK10.vkUpdateDescriptorSets;
+import static org.lwjgl.vulkan.VK10.vkWaitForFences;
+import org.lwjgl.vulkan.VkApplicationInfo;
+import org.lwjgl.vulkan.VkAttachmentDescription;
+import org.lwjgl.vulkan.VkAttachmentReference;
+import org.lwjgl.vulkan.VkBufferCreateInfo;
+import org.lwjgl.vulkan.VkClearValue;
+import org.lwjgl.vulkan.VkCommandBuffer;
+import org.lwjgl.vulkan.VkCommandBufferAllocateInfo;
+import org.lwjgl.vulkan.VkCommandBufferBeginInfo;
+import org.lwjgl.vulkan.VkCommandPoolCreateInfo;
+import org.lwjgl.vulkan.VkDescriptorImageInfo;
+import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
+import org.lwjgl.vulkan.VkDescriptorPoolSize;
+import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
+import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
+import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
+import org.lwjgl.vulkan.VkDevice;
+import org.lwjgl.vulkan.VkDeviceCreateInfo;
+import org.lwjgl.vulkan.VkDeviceQueueCreateInfo;
+import org.lwjgl.vulkan.VkExtent2D;
+import org.lwjgl.vulkan.VkFenceCreateInfo;
+import org.lwjgl.vulkan.VkFramebufferCreateInfo;
+import org.lwjgl.vulkan.VkGraphicsPipelineCreateInfo;
+import org.lwjgl.vulkan.VkImageCreateInfo;
+import org.lwjgl.vulkan.VkImageMemoryBarrier;
+import org.lwjgl.vulkan.VkImageViewCreateInfo;
+import org.lwjgl.vulkan.VkInstance;
+import org.lwjgl.vulkan.VkInstanceCreateInfo;
+import org.lwjgl.vulkan.VkMemoryAllocateInfo;
+import org.lwjgl.vulkan.VkMemoryRequirements;
+import org.lwjgl.vulkan.VkPhysicalDevice;
+import org.lwjgl.vulkan.VkPhysicalDeviceMemoryProperties;
+import org.lwjgl.vulkan.VkPipelineColorBlendAttachmentState;
+import org.lwjgl.vulkan.VkPipelineColorBlendStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineDynamicStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineInputAssemblyStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
+import org.lwjgl.vulkan.VkPipelineMultisampleStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineRasterizationStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
+import org.lwjgl.vulkan.VkPipelineVertexInputStateCreateInfo;
+import org.lwjgl.vulkan.VkPipelineViewportStateCreateInfo;
+import org.lwjgl.vulkan.VkPresentInfoKHR;
+import org.lwjgl.vulkan.VkPushConstantRange;
+import org.lwjgl.vulkan.VkQueue;
+import org.lwjgl.vulkan.VkQueueFamilyProperties;
+import org.lwjgl.vulkan.VkRenderPassBeginInfo;
+import org.lwjgl.vulkan.VkRenderPassCreateInfo;
+import org.lwjgl.vulkan.VkSamplerCreateInfo;
+import org.lwjgl.vulkan.VkSemaphoreCreateInfo;
+import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
+import org.lwjgl.vulkan.VkSubmitInfo;
+import org.lwjgl.vulkan.VkSurfaceCapabilitiesKHR;
+import org.lwjgl.vulkan.VkSurfaceFormatKHR;
+import org.lwjgl.vulkan.VkSwapchainCreateInfoKHR;
+import org.lwjgl.vulkan.VkViewport;
+import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /**
  * Owns the Vulkan objects needed to draw the WaveSim window.
@@ -90,9 +273,8 @@ import static org.lwjgl.vulkan.VK10.*;
  * drawing experiment belongs in recordCommandBuffer().
  */
 public final class VulkanRenderer {
+
     private static final int MAX_FRAMES_IN_FLIGHT = 2;
-    private static final int TEXTURE_WIDTH = 256;
-    private static final int TEXTURE_HEIGHT = 64;
 
     // WindowManager gives Vulkan access to the GLFW window without making
     // this renderer responsible for creating or destroying the window.
@@ -133,7 +315,7 @@ public final class VulkanRenderer {
     private long textImageView;
     private long textSampler;
     private boolean textImageInitialized;
-
+    private String fpsText = "FPS: --";
 
     /**
      * Connects the renderer to an already-created GLFW window.
@@ -175,7 +357,6 @@ public final class VulkanRenderer {
     }
 
     // -------------------- Vulkan instance and device --------------------
-
     /**
      * Creates the Vulkan instance, which is the starting point for Vulkan.
      */
@@ -307,7 +488,6 @@ public final class VulkanRenderer {
     }
 
     // -------------------- Swapchain and pipeline --------------------
-
     /**
      * Creates the images that Vulkan presents to the window.
      */
@@ -378,8 +558,8 @@ public final class VulkanRenderer {
     private VkSurfaceFormatKHR chooseSurfaceFormat(VkSurfaceFormatKHR.Buffer formats) {
         for (int i = 0; i < formats.capacity(); i++) {
             VkSurfaceFormatKHR format = formats.get(i);
-            if (format.format() == VK_FORMAT_B8G8R8A8_SRGB &&
-                    format.colorSpace() == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            if (format.format() == VK_FORMAT_B8G8R8A8_SRGB
+                    && format.colorSpace() == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 return format;
             }
         }
@@ -513,8 +693,8 @@ public final class VulkanRenderer {
                     .blendEnable(true).srcColorBlendFactor(VK_BLEND_FACTOR_SRC_ALPHA)
                     .dstColorBlendFactor(VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA).colorBlendOp(VK_BLEND_OP_ADD)
                     .srcAlphaBlendFactor(VK_BLEND_FACTOR_ONE).dstAlphaBlendFactor(VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
-                    .alphaBlendOp(VK_BLEND_OP_ADD).colorWriteMask(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
+                    .alphaBlendOp(VK_BLEND_OP_ADD).colorWriteMask(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+                    | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT);
             VkPipelineColorBlendStateCreateInfo blending = VkPipelineColorBlendStateCreateInfo.calloc(stack)
                     .sType(VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO)
                     .logicOpEnable(false).pAttachments(blendAttachment);
@@ -550,7 +730,6 @@ public final class VulkanRenderer {
     }
 
     // -------------------- Text texture --------------------
-
     private long createShaderModule(ByteBuffer code, MemoryStack stack) {
         VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO).pCode(code);
@@ -576,13 +755,9 @@ public final class VulkanRenderer {
     }
 
     private void createTextResources() {
-        try (MemoryStack stack = stackPush()) {
-            createImage(TEXTURE_WIDTH, TEXTURE_HEIGHT, VK_FORMAT_R8G8B8A8_UNORM,
-                    VK_IMAGE_TILING_OPTIMAL,
-                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-            textImageView = createImageView(textImage, VK_FORMAT_R8G8B8A8_UNORM);
+        createTextImageResources();
 
+        try (MemoryStack stack = stackPush()) {
             VkSamplerCreateInfo samplerInfo = VkSamplerCreateInfo.calloc(stack)
                     .sType(VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO)
                     .magFilter(VK_FILTER_LINEAR).minFilter(VK_FILTER_LINEAR)
@@ -599,11 +774,19 @@ public final class VulkanRenderer {
         }
 
         createDescriptorResources();
-        updateFpsText("FPS: --");
+        uploadOverlayImage(createOverlayImage(null));
+    }
+
+    private void createTextImageResources() {
+        createImage(swapchainExtent.width(), swapchainExtent.height(), VK_FORMAT_R8G8B8A8_UNORM,
+                VK_IMAGE_TILING_OPTIMAL,
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        textImageView = createImageView(textImage, VK_FORMAT_R8G8B8A8_UNORM);
+        textImageInitialized = false;
     }
 
     // -------------------- Frame execution --------------------
-
     private void createImage(int width, int height, int format, int tiling, int usage, int properties) {
         try (MemoryStack stack = stackPush()) {
             VkImageCreateInfo imageInfo = VkImageCreateInfo.calloc(stack)
@@ -752,9 +935,13 @@ public final class VulkanRenderer {
     }
 
     private void destroyRenderFinishedSemaphores() {
-        if (device == null) return;
+        if (device == null) {
+            return;
+        }
         for (long semaphore : renderFinished) {
-            if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(device, semaphore, null);
+            if (semaphore != VK_NULL_HANDLE) {
+                vkDestroySemaphore(device, semaphore, null);
+            }
         }
         renderFinished = new long[0];
     }
@@ -791,10 +978,12 @@ public final class VulkanRenderer {
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
                     0, stack.longs(descriptorSet), null);
 
-            float scaleX = 2.0f * TEXTURE_WIDTH / swapchainExtent.width();
-            float scaleY = 2.0f * TEXTURE_HEIGHT / swapchainExtent.height();
-            float marginX = 2.0f * 12.0f / swapchainExtent.width();
-            float marginY = 2.0f * 12.0f / swapchainExtent.height();
+            // The uploaded image is the size of the whole framebuffer, so the
+            // textured quad covers the complete window.
+            float scaleX = 2.0f;
+            float scaleY = 2.0f;
+            float marginX = 0.0f;
+            float marginY = 0.0f;
             ByteBuffer pushConstants = stack.malloc(16)
                     .putFloat(scaleX).putFloat(scaleY)
                     .putFloat(-1.0f + marginX).putFloat(-1.0f + marginY).flip();
@@ -865,35 +1054,73 @@ public final class VulkanRenderer {
     }
 
     /**
-     * Rebuilds the small texture that displays the FPS counter.
+     * Builds one transparent full-window image containing the wave and FPS
+     * overlay, then uploads that image to the sampled Vulkan texture.
+     */
+    public void drawWave(WaveGenerator wave) {
+        uploadOverlayImage(createOverlayImage(wave));
+    }
+
+    private BufferedImage createOverlayImage(WaveGenerator wave) {
+        int width = swapchainExtent.width();
+        int height = swapchainExtent.height();
+
+        BufferedImage image = new BufferedImage(
+                width,
+                height,
+                BufferedImage.TYPE_INT_ARGB
+        );
+
+        Graphics2D graphics = image.createGraphics();
+        try {
+            // A new BufferedImage starts transparent. The clear operation is
+            // explicit here so the intended alpha behavior is easy to see.
+            graphics.setComposite(AlphaComposite.Clear);
+            graphics.fillRect(0, 0, width, height);
+            graphics.setComposite(AlphaComposite.SrcOver);
+
+            if (wave != null) {
+                graphics.setColor(Color.CYAN);
+                for (int x = 0; x < width; x++) {
+                    float pointFromCenter = x - width / 2.0f;
+                    // Pixel coordinates are large numbers. Scale them before
+                    // passing them to sin(), otherwise the wave oscillates
+                    // every few pixels and is hard to see.
+                    float waveHeight = wave.HeightAtPoint(pointFromCenter * 0.02f);
+                    int y = (int) (height / 2.0f - waveHeight);
+                    graphics.fillRect(x, y, 2, 2);
+                }
+            }
+
+            // Draw the FPS after the wave so the overlay is visually on top.
+            graphics.setColor(new Color(0, 0, 0, 165));
+            graphics.fillRoundRect(12, 12, 128, 48, 8, 8);
+            graphics.setColor(Color.WHITE);
+            graphics.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 24));
+            graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            graphics.drawString(fpsText, 24, 44);
+            return image;
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    /**
+     * Stores the latest FPS text. It is composed into the next full image
+     * upload by drawWave().
      */
     public void updateFpsText(String text) {
-        // Create an ARGB image that will hold the updated FPS overlay.
-        BufferedImage image = new BufferedImage(TEXTURE_WIDTH, TEXTURE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = image.createGraphics();
+        fpsText = text;
+    }
 
-        // Clear the previous overlay so transparent pixels remain transparent.
-        graphics.setComposite(AlphaComposite.Clear);
-        graphics.fillRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
-
-        // Draw a semi-transparent background behind the FPS text.
-        graphics.setComposite(AlphaComposite.SrcOver);
-        graphics.setColor(new Color(0, 0, 0, 165));
-        graphics.fillRoundRect(0, 0, 128, 48, 8, 8);
-
-        // Configure readable text rendering and draw the supplied FPS value.
-        graphics.setColor(Color.WHITE);
-        graphics.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 24));
-        graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        graphics.drawString(text, 12, 32);
-        graphics.dispose();
-
-        // Allocate a native RGBA buffer for uploading the image to Vulkan.
-        ByteBuffer pixels = memAlloc(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4);
+    private void uploadOverlayImage(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        ByteBuffer pixels = memAlloc(width * height * 4);
         try {
-            for (int y = 0; y < TEXTURE_HEIGHT; y++) {
-                for (int x = 0; x < TEXTURE_WIDTH; x++) {
-                    // Java stores pixels as ARGB; Vulkan expects the channels in RGBA order.
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
                     int argb = image.getRGB(x, y);
                     pixels.put((byte) ((argb >>> 16) & 0xFF));
                     pixels.put((byte) ((argb >>> 8) & 0xFF));
@@ -902,16 +1129,14 @@ public final class VulkanRenderer {
                 }
             }
 
-            // Prepare the buffer for reading before passing it to the upload routine.
             pixels.flip();
-            uploadTextPixels(pixels);
+            uploadTextPixels(pixels, width, height);
         } finally {
-            // Always release the native memory, including when uploading fails.
             memFree(pixels);
         }
     }
 
-    private void uploadTextPixels(ByteBuffer pixels) {
+    private void uploadTextPixels(ByteBuffer pixels, int width, int height) {
         BufferResource staging = createBuffer(pixels.remaining(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         try (MemoryStack stack = stackPush()) {
@@ -926,7 +1151,7 @@ public final class VulkanRenderer {
                 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                 : VK_IMAGE_LAYOUT_UNDEFINED;
         transitionImageLayout(textImage, oldLayout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        copyBufferToImage(staging.buffer, textImage, TEXTURE_WIDTH, TEXTURE_HEIGHT);
+        copyBufferToImage(staging.buffer, textImage, width, height);
         transitionImageLayout(textImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         textImageInitialized = true;
         vkDestroyBuffer(device, staging.buffer, null);
@@ -959,8 +1184,8 @@ public final class VulkanRenderer {
             VkPhysicalDeviceMemoryProperties properties = VkPhysicalDeviceMemoryProperties.calloc(stack);
             vkGetPhysicalDeviceMemoryProperties(physicalDevice, properties);
             for (int i = 0; i < properties.memoryTypeCount(); i++) {
-                if ((typeBits & (1 << i)) != 0 &&
-                        (properties.memoryTypes(i).propertyFlags() & requiredProperties) == requiredProperties) {
+                if ((typeBits & (1 << i)) != 0
+                        && (properties.memoryTypes(i).propertyFlags() & requiredProperties) == requiredProperties) {
                     return i;
                 }
             }
@@ -1007,7 +1232,7 @@ public final class VulkanRenderer {
             var region = org.lwjgl.vulkan.VkBufferImageCopy.calloc(1, stack)
                     .bufferOffset(0).bufferRowLength(0).bufferImageHeight(0)
                     .imageSubresource(s -> s.aspectMask(VK_IMAGE_ASPECT_COLOR_BIT).mipLevel(0)
-                            .baseArrayLayer(0).layerCount(1))
+                    .baseArrayLayer(0).layerCount(1))
                     .imageOffset(o -> o.set(0, 0, 0)).imageExtent(e -> e.set(width, height, 1));
             vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, region);
         }
@@ -1046,13 +1271,14 @@ public final class VulkanRenderer {
             IntBuffer height = stack.ints(0);
             window.getFramebufferSize(width, height);
             // A minimized window has a framebuffer size of zero. Vulkan cannot
-        // create a zero-sized swapchain, so wait until the window is visible.
-        while (width.get(0) == 0 || height.get(0) == 0) {
+            // create a zero-sized swapchain, so wait until the window is visible.
+            while (width.get(0) == 0 || height.get(0) == 0) {
                 window.waitForEvents();
                 window.getFramebufferSize(width, height);
             }
         }
         check(vkDeviceWaitIdle(device), "Waiting for device during resize");
+        destroyTextImageResources();
         destroyRenderFinishedSemaphores();
         destroyFramebuffers();
         destroyGraphicsPipeline();
@@ -1065,6 +1291,11 @@ public final class VulkanRenderer {
         imageViews = new long[0];
         swapchainImages = new long[0];
         createSwapchain();
+        createTextImageResources();
+        try (MemoryStack stack = stackPush()) {
+            updateDescriptorSet(stack);
+        }
+        uploadOverlayImage(createOverlayImage(null));
         createRenderPass();
         createGraphicsPipeline();
         createFramebuffers();
@@ -1076,8 +1307,26 @@ public final class VulkanRenderer {
         window.clearResized();
     }
 
+    private void destroyTextImageResources() {
+        if (textImageView != VK_NULL_HANDLE) {
+            vkDestroyImageView(device, textImageView, null);
+            textImageView = VK_NULL_HANDLE;
+        }
+        if (textImage != VK_NULL_HANDLE) {
+            vkDestroyImage(device, textImage, null);
+            textImage = VK_NULL_HANDLE;
+        }
+        if (textImageMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(device, textImageMemory, null);
+            textImageMemory = VK_NULL_HANDLE;
+        }
+        textImageInitialized = false;
+    }
+
     private void destroyFramebuffers() {
-        if (device == null) return;
+        if (device == null) {
+            return;
+        }
         for (long framebuffer : framebuffers) {
             vkDestroyFramebuffer(device, framebuffer, null);
         }
@@ -1085,9 +1334,15 @@ public final class VulkanRenderer {
     }
 
     private void destroyGraphicsPipeline() {
-        if (device == null) return;
-        if (graphicsPipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, graphicsPipeline, null);
-        if (pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, pipelineLayout, null);
+        if (device == null) {
+            return;
+        }
+        if (graphicsPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, graphicsPipeline, null);
+        }
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, pipelineLayout, null);
+        }
         graphicsPipeline = VK_NULL_HANDLE;
         pipelineLayout = VK_NULL_HANDLE;
     }
@@ -1100,26 +1355,52 @@ public final class VulkanRenderer {
         if (device != null) {
             vkDeviceWaitIdle(device);
             for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                if (inFlight[i] != VK_NULL_HANDLE) vkDestroyFence(device, inFlight[i], null);
-                if (imageAvailable[i] != VK_NULL_HANDLE) vkDestroySemaphore(device, imageAvailable[i], null);
+                if (inFlight[i] != VK_NULL_HANDLE) {
+                    vkDestroyFence(device, inFlight[i], null);
+                }
+                if (imageAvailable[i] != VK_NULL_HANDLE) {
+                    vkDestroySemaphore(device, imageAvailable[i], null);
+                }
             }
             destroyRenderFinishedSemaphores();
             destroyFramebuffers();
             destroyGraphicsPipeline();
-            if (descriptorPool != VK_NULL_HANDLE) vkDestroyDescriptorPool(device, descriptorPool, null);
-            if (descriptorSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null);
-            if (textSampler != VK_NULL_HANDLE) vkDestroySampler(device, textSampler, null);
-            if (textImageView != VK_NULL_HANDLE) vkDestroyImageView(device, textImageView, null);
-            if (textImage != VK_NULL_HANDLE) vkDestroyImage(device, textImage, null);
-            if (textImageMemory != VK_NULL_HANDLE) vkFreeMemory(device, textImageMemory, null);
-            if (renderPass != VK_NULL_HANDLE) vkDestroyRenderPass(device, renderPass, null);
-            for (long imageView : imageViews) vkDestroyImageView(device, imageView, null);
-            if (swapchain != VK_NULL_HANDLE) vkDestroySwapchainKHR(device, swapchain, null);
-            if (commandPool != VK_NULL_HANDLE) vkDestroyCommandPool(device, commandPool, null);
+            if (descriptorPool != VK_NULL_HANDLE) {
+                vkDestroyDescriptorPool(device, descriptorPool, null);
+            }
+            if (descriptorSetLayout != VK_NULL_HANDLE) {
+                vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null);
+            }
+            if (textSampler != VK_NULL_HANDLE) {
+                vkDestroySampler(device, textSampler, null);
+            }
+            if (textImageView != VK_NULL_HANDLE) {
+                vkDestroyImageView(device, textImageView, null);
+            }
+            if (textImage != VK_NULL_HANDLE) {
+                vkDestroyImage(device, textImage, null);
+            }
+            if (textImageMemory != VK_NULL_HANDLE) {
+                vkFreeMemory(device, textImageMemory, null);
+            }
+            if (renderPass != VK_NULL_HANDLE) {
+                vkDestroyRenderPass(device, renderPass, null);
+            }
+            for (long imageView : imageViews) {
+                vkDestroyImageView(device, imageView, null);
+            }
+            if (swapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(device, swapchain, null);
+            }
+            if (commandPool != VK_NULL_HANDLE) {
+                vkDestroyCommandPool(device, commandPool, null);
+            }
             vkDestroyDevice(device, null);
         }
         if (instance != null) {
-            if (surface != VK_NULL_HANDLE) vkDestroySurfaceKHR(instance, surface, null);
+            if (surface != VK_NULL_HANDLE) {
+                vkDestroySurfaceKHR(instance, surface, null);
+            }
             vkDestroyInstance(instance, null);
         }
         if (swapchainExtent != null) {
@@ -1137,13 +1418,22 @@ public final class VulkanRenderer {
     }
 
     private static void checkAllowed(int result, String action, int... allowed) {
-        for (int value : allowed) if (result == value) return;
+        for (int value : allowed) {
+            if (result == value) {
+                return;
+            }
+        }
         check(result, action);
     }
 
     private record QueueFamilies(int graphicsFamily, int presentFamily) {
-        boolean complete() { return graphicsFamily >= 0 && presentFamily >= 0; }
+
+        boolean complete() {
+            return graphicsFamily >= 0 && presentFamily >= 0;
+        }
     }
 
-    private record BufferResource(long buffer, long memory) {}
+    private record BufferResource(long buffer, long memory) {
+
+    }
 }

@@ -6,10 +6,9 @@ package wavesim;
  * WaveSim does not contain Vulkan setup details. It only connects the focused
  * classes and describes the order in which the program runs:
  *
- * 1. Create the GLFW window.
- * 2. Create the Vulkan renderer.
- * 3. Repeat the frame loop until the user closes the window.
- * 4. Clean up everything in reverse order.
+ * 1. Create the GLFW window. 2. Create the Vulkan renderer. 3. Repeat the frame
+ * loop until the user closes the window. 4. Clean up everything in reverse
+ * order.
  */
 public final class WaveSim {
 
@@ -23,6 +22,7 @@ public final class WaveSim {
     private void run() {
         WindowManager window = new WindowManager();
         VulkanRenderer renderer = new VulkanRenderer(window);
+        WaveGenerator wave = new WaveGenerator(100);
 
         FpsCounter fpsCounter = new FpsCounter();
 
@@ -33,7 +33,6 @@ public final class WaveSim {
             // This is the main game/rendering loop.
             while (!window.shouldClose()) {
                 window.pollEvents();
-                renderer.drawFrame();
 
                 // Most frames do not need a text update. The counter returns
                 // null until half a second of frames has been measured.
@@ -41,6 +40,11 @@ public final class WaveSim {
                 if (newFpsText != null) {
                     renderer.updateFpsText(newFpsText);
                 }
+
+                // Build the complete image before submitting the frame. The
+                // renderer composes the wave and FPS text into one texture.
+                renderer.drawWave(wave);
+                renderer.drawFrame();
             }
 
             renderer.waitForIdle();

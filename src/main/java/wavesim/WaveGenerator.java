@@ -7,7 +7,7 @@ public class WaveGenerator {
     public float time = 0;
     WaveGenerator(float amplitude)
     {
-        amplitude = this.amplitude;
+        this.amplitude = amplitude;
     }
 
 
