@@ -18,3 +18,17 @@ This is a concise, Git-tracked record of durable context from WaveSim Codex conv
 - Changes:
 - Verification:
 - Follow-up:
+
+### 2026-09-23 — Plan 2D parametric curve rendering
+
+- Objective: Plan a WaveSim drawing model for 2D waves and curves that can represent paths where one horizontal coordinate has multiple vertical coordinates.
+- Changes: Added `docs/codex/2D_CURVE_RENDERING_PLAN.md` with a parametric-curve model, separation of curve parameter from animation time, sampling and coordinate-mapping steps, and an incremental renderer roadmap. Left the existing uncommitted Java experiments untouched.
+- Verification: Reviewed the current WaveSim renderer and wave prototype to align the proposal with the existing AWT overlay and Vulkan texture-upload path. No code build or tests were run because this was a planning-only change.
+- Follow-up: If implementing, start by capturing one animation-time value per frame and drawing sampled parametric paths into the existing overlay.
+
+### 2026-09-23 — Set up the ChatGPT Work bridge
+
+- Objective: Use a WaveSim ChatGPT Work project alongside Codex CLI while keeping durable project context connected through Git.
+- Changes: Created the ChatGPT Work project `WaveSim`, added project instructions linking it to `JosFa1/WaveSim`, and added cross-surface guidance to `AGENTS.md`. Started a Work chat with the GitHub connector to read the published repository.
+- Verification: The Work project's GitHub connector read the repository's default `main` branch, README, `AGENTS.md`, and session log. The Work project and local Codex project named `WaveSim` both appear in the project list. Work cannot see local uncommitted files, and CLI conversation history remains separate.
+- Follow-up: Use the GitHub connector in Work chats for published repository context; use the local Codex project for checkout/Git operations. Keep only concise decisions and outcomes in this log, then commit and push the relevant notes when they should be available on other devices.
