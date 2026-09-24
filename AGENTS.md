@@ -17,6 +17,7 @@ Codex conversation transcripts are managed by the Codex app and are not automati
 - The ChatGPT Work project named `WaveSim` has separate chat history from Codex CLI tasks; chats are not merged or automatically imported.
 - Its GitHub connector can read the published `main` branch of `JosFa1/WaveSim`, but it cannot see local uncommitted changes. Use the local WaveSim project for the checkout and Git operations.
 - Treat concise, committed entries in `docs/codex/SESSION_LOG.md` as the bridge between Work chats and CLI/Codex work. Do not put full transcripts or secrets in Git.
+- Use `docs/codex/CLI_CHAT_INDEX.md` to find earlier CLI task titles and summaries; the index is not a transcript or proof of the current code state.
 - When cross-device sync is wanted, publish only the relevant project notes and requested code changes; preserve unrelated working-tree changes.
 
 ## Repository boundary

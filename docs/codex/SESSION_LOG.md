@@ -32,3 +32,10 @@ This is a concise, Git-tracked record of durable context from WaveSim Codex conv
 - Changes: Created the ChatGPT Work project `WaveSim`, added project instructions linking it to `JosFa1/WaveSim`, and added cross-surface guidance to `AGENTS.md`. Started a Work chat with the GitHub connector to read the published repository.
 - Verification: The Work project's GitHub connector read the repository's default `main` branch, README, `AGENTS.md`, and session log. The Work project and local Codex project named `WaveSim` both appear in the project list. Work cannot see local uncommitted files, and CLI conversation history remains separate.
 - Follow-up: Use the GitHub connector in Work chats for published repository context; use the local Codex project for checkout/Git operations. Keep only concise decisions and outcomes in this log, then commit and push the relevant notes when they should be available on other devices.
+
+### 2026-09-23 — Index earlier WaveSim CLI chats
+
+- Objective: Make previous WaveSim Codex CLI work discoverable from the Git repository and ChatGPT Work without copying complete transcripts.
+- Changes: Added `docs/codex/CLI_CHAT_INDEX.md` with titles and concise scope notes for the Java/LWJGL tasks and earlier C++ tasks found under the WaveSim and legacy `cpp` project labels.
+- Verification: Cross-checked the listed titles and summaries against the Codex task list. The index explicitly warns that current code state must be checked in the working tree.
+- Follow-up: Update the index when new substantive WaveSim CLI tasks add durable context; keep outcomes in this session log and transcripts in their original Codex chats.
